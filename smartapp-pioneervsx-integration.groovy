@@ -1,8 +1,7 @@
 /**
  *  Pioneer VSX-1130 Integration via REST API Callback
  *
- *  Make sure and publish smartapp after pasting in code.
- *  Author: Scott Dozier
+ *  Author: Scott Dozier 2015
  */
 definition(
     name: "Pioneer VSX-1130 Integration",
@@ -43,7 +42,7 @@ mappings {
     
 }
 
-def installed() {}
+def installed() { log.debug "apiServerUrl: ${apiServerUrl("my/path")}"}
 
 def updated() {}
 
@@ -79,7 +78,11 @@ private void update(devices) {
         	if(command == "power")
        		{
             	device.update("switch",state)
-       		}
+            	if (state == "off")
+                {
+                    device.update("status","paused")
+                }       		
+            }
             if(command == "mute")
        		{
             	if (state == "on")
@@ -88,7 +91,8 @@ private void update(devices) {
                 }
                 if (state == "off")
                 {
-              		device.update("mute","unmuted")
+              		device.update("mute","unmuted")              		
+                    
 				}
             }
             if(command == "volumeset")
@@ -107,7 +111,13 @@ private void update(devices) {
             if(command == "track")
        		{
                     device.update("trackDescription",state)
+                    device.update("status","playing")
+
        		}
+            if(command == "pause")
+       		{
+                    device.update("status","paused")
+       		}            
 		}
 	}
 }
