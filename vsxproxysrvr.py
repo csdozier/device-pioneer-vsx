@@ -1,5 +1,5 @@
 __author__ = 'scdozier'
-## Pioneer VSX Reciever Proxy Server
+## Pioneer VSX Receiver Proxy Server
 ##
 ## Written by csdozier@gmail.com
 ##
@@ -20,6 +20,7 @@ import requests
 from threading import Thread
 import traceback
 from threading import Thread
+import base64
 
 
 LOGTOFILE = True
@@ -167,6 +168,10 @@ class HTTPChannel(asynchat.async_chat):
 class VSXControl(asynchat.async_chat):
     current_main_input = ''
     current_hdz_input = ''
+    current_main_power = False
+    current_hdz_power = False
+    last_command = ''
+    last_command_time = datetime.datetime.now()
 
     def __init__(self, config):
         # Call parent class's __init__ method
@@ -211,8 +216,11 @@ class VSXControl(asynchat.async_chat):
 
     def handle_connect(self):
         self._loggedin = True
-
+        self._buffer = []
         logger("Connected to %s:%i" % (self._config.RECEIVERIP, self._config.RECEIVERPORT))
+        if len(self.last_command) > 0:
+            self.send_command(self.last_command)
+            self.last_command = ''
 
     def handle_close(self):
         self._loggedin = False
@@ -228,8 +236,9 @@ class VSXControl(asynchat.async_chat):
 
     def send_command(self, command):
         logger('TX > '+command)
+        self.last_command = command
         self.push(command+'\r\n')
-        time.sleep(0.1) #sleep 100ms between commands
+        time.sleep(0.085) #sleep 85ms between commands
 
     def handle_line(self, input):
         if input != '':
@@ -256,20 +265,24 @@ class VSXControl(asynchat.async_chat):
                     if input.endswith('0'):
                         logger('TX > HTTP GET: '+main_zone_URL_prefix+'power/on'+main_zone_URL_suffix)
                         my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        self.current_main_power = True
                         my_requests_thread.run()
                     if input.endswith('1'):
                         logger('TX > HTTP GET:'+main_zone_URL_prefix+'power/off'+main_zone_URL_suffix)
                         my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                         my_requests_thread.run()
+                        self.current_main_power = False
                 elif input.startswith("ZEP"): #hdz power on/off
                     if input.endswith('0'):
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/on'+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        self.current_hdz_power = True
                         my_requests_thread.run()
                     if input.endswith('1'):
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/off'+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                         my_requests_thread.run()
+                        self.current_hdz_power = False
                 elif input.startswith("VOL"): #main volume
                     code = input.split('VOL')[1]
                     vol_db = ((float(code) - 161) / 2)
@@ -310,27 +323,44 @@ class VSXControl(asynchat.async_chat):
                         my_requests_thread.run()
                         self.current_main_input = str(self._config.MAIN_INPUTS[str(code)])
                     if '02' in str(code):
-                        self._VSXControl.send_command('?FR')
+                        self.send_command('?FR')
                 elif input.startswith("ZEA"): #hdz input
                     code = input.split('ZEA')[1]
                     if len(code) ==2:
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)])+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                         my_requests_thread.run()
-                    self.current_hdz_input = str(self._config.HDZ_INPUTS[str(code)])
+                        self.current_hdz_input = str(self._config.HDZ_INPUTS[str(code)])
                 elif input.startswith("GEH01020"): #main track
                     track = input.split('GEH01020"')[1].split('"')[0]
-                    logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
-                    my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                    if self.current_main_power:
+                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.run()
+                    else:
+                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.run()
+                    if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
+                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.run()
+                elif input.startswith("GCH03010100000000100"):
+                    logger('TX > HTTP GET:'+main_zone_URL_prefix+'pause'+main_zone_URL_suffix)
+                    my_requests_thread = RequestsThread(main_zone_URL_prefix+'pause'+main_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                     my_requests_thread.run()
+                    if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
+                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.run()
                 elif input.startswith("FRF"): #fm station
-                    freq_string = input.split('FRF"')[1].split('"')[0]
+                    freq_string = input.split('FRF')[1]
                     track = str(int(freq_string[0:3]))+'.'+freq_string[-2:]
                     logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
                     my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                     my_requests_thread.run()
                 elif input.startswith("PRA"): #tuner preset
-                    self._VSXControl.send_command('?FR')
+                    self.send_command('?FR')
             except Exception as ex:
                 tb = traceback.format_exc()
                 logger('Exception! '+ str(ex.message)+str(tb))
@@ -350,6 +380,7 @@ class push_FileProducer:
         return ""
 
 class VSXProxyServer(asyncore.dispatcher):
+
     def __init__(self, config):
         # Call parent class's __init__ method
         asyncore.dispatcher.__init__(self)
@@ -387,30 +418,38 @@ class VSXProxyServer(asyncore.dispatcher):
 
         query = urlparse.urlparse(request)
         query_array = urlparse.parse_qs(query.query, True)
-        logger(query.path)
+        path = query.path
         try:
+            if '&apiserverurl' in query.path:
+                path,base64url = query.path.split('&apiserverurl=')
+                url = urllib.unquote(base64url).decode('utf8')
+                if url not in config.CALLBACKURL_BASE:
+                    url = url.replace('http:','https:')
+                    logger('Setting API Base URL To: '+url)
+                    config.CALLBACKURL_BASE = url
+            logger(path)
             if self._VSXControl._loggedin == False:
                 channel.pushstatus(500, "Not Connected to Receiver, try again later.")
                 logger("500 Error, Unable to process request as connection to receiver is down.")
-            elif query.path == '/':
+            elif path == '/':
                 channel.pushstatus(404, "Not found")
-            elif '/pioneervsxcontrol/main/power' in query.path:  #power on/off main zone
-                if query.path.split('/')[-1] == 'on':
+            elif '/pioneervsxcontrol/main/power' in path:  #power on/off main zone
+                if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Powering on receiver'}))
                     self._VSXControl.send_command('PO')
-                if query.path.split('/')[-1] == 'off':
+                if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
                     self._VSXControl.send_command('PF')
-            elif '/pioneervsxcontrol/hdz/power' in query.path:  #power on/off hd zone
-                if query.path.split('/')[-1] == 'on':
+            elif '/pioneervsxcontrol/hdz/power' in path:  #power on/off hd zone
+                if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Powering on receiver'}))
                     self._VSXControl.send_command('ZEO')
-                if query.path.split('/')[-1] == 'off':
+                if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
                     self._VSXControl.send_command('ZEF')
-            elif '/pioneervsxcontrol/main/volumeset' in query.path:  #main zone volume set
+            elif '/pioneervsxcontrol/main/volumeset' in path:  #main zone volume set
                 try:
-                    level = int(query.path.split('/')[-1])
+                    level = int(path.split('/')[-1])
                     if level <= 100 and level >= 0:
                         db_value = -80 + ((level*config.VOLUMELIMIT)/100)+((4*level)/5)
                         code = ((db_value*2)+161)
@@ -422,9 +461,9 @@ class VSXProxyServer(asyncore.dispatcher):
                             self._VSXControl.send_command(str(code)+'VL')
                 except ValueError:
                     logger ('Invalid volume level received')
-            elif '/pioneervsxcontrol/hdz/volumeset' in query.path:  #hdz zone volume set
+            elif '/pioneervsxcontrol/hdz/volumeset' in path:  #hdz zone volume set
                 try:
-                    level = int(query.path.split('/')[-1])
+                    level = int(path.split('/')[-1])
                     if level <= 100 and level >= 0:
                         db_value = -80 + ((level*config.VOLUMELIMIT)/100)+((4*level)/5)
                         code = ((db_value*2)+81)
@@ -437,55 +476,55 @@ class VSXProxyServer(asyncore.dispatcher):
 
                 except ValueError:
                     logger ('Invalid volume level received')
-            elif '/pioneervsxcontrol/main/mute' in query.path:  #power on/off main zone
-                if query.path.split('/')[-1] == 'on':
+            elif '/pioneervsxcontrol/main/mute' in path:  #power on/off main zone
+                if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Mute on'}))
                     self._VSXControl.send_command('MO')
-                if query.path.split('/')[-1] == 'off':
+                if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Mute off'}))
                     self._VSXControl.send_command('MF')
-            elif '/pioneervsxcontrol/hdz/mute' in query.path:  #hdz on/off main zone
-                if query.path.split('/')[-1] == 'on':
+            elif '/pioneervsxcontrol/hdz/mute' in path:  #hdz on/off main zone
+                if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Mute on'}))
                     self._VSXControl.send_command('HZMO')
-                if query.path.split('/')[-1] == 'off':
+                if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Mute off'}))
                     self._VSXControl.send_command('HZMF')
-            elif '/pioneervsxcontrol/main/input/set' in query.path:  #set input main zone
-                code = query.path.split('/')[-1]
+            elif '/pioneervsxcontrol/main/input/set' in path:  #set input main zone
+                code = path.split('/')[-1]
                 channel.pushok(json.dumps({'response' : 'Setting input:'+str(code)}))
                 self._VSXControl.send_command(str(code)+'FN')
-            elif '/pioneervsxcontrol/hdz/input/set' in query.path:  #set input hdz zone
-                code = query.path.split('/')[-1]
+            elif '/pioneervsxcontrol/hdz/input/set' in path:  #set input hdz zone
+                code = path.split('/')[-1]
                 channel.pushok(json.dumps({'response' : 'Setting input:'+str(code)}))
                 self._VSXControl.send_command(str(code)+'ZEA')
-            elif '/pioneervsxcontrol/main/input' in query.path:  #input next/prev main zone
-                if query.path.split('/')[-1] == 'next':
+            elif '/pioneervsxcontrol/main/input' in path:  #input next/prev main zone
+                if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
                     self._VSXControl.send_command('FU')
-                if query.path.split('/')[-1] == 'previous':
+                if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
                     self._VSXControl.send_command('FD')
-            elif '/pioneervsxcontrol/hdz/input' in query.path:  #input next/prev hdz zone
-                if query.path.split('/')[-1] == 'next':
+            elif '/pioneervsxcontrol/hdz/input' in path:  #input next/prev hdz zone
+                if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
                     self._VSXControl.send_command('ZEC')
-                if query.path.split('/')[-1] == 'previous':
+                if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
                     self._VSXControl.send_command('ZEB')
-            elif '/pioneervsxcontrol/main/refresh' in query.path:  #refresh main zone
+            elif '/pioneervsxcontrol/main/refresh' in path:  #refresh main zone
                     self._VSXControl.send_command('?P')
                     self._VSXControl.send_command('?V')
                     self._VSXControl.send_command('?F')
-            elif '/pioneervsxcontrol/hdz/refresh' in query.path:  #refresh hdz zone
+            elif '/pioneervsxcontrol/hdz/refresh' in path:  #refresh hdz zone
                     self._VSXControl.send_command('?ZEP')
                     self._VSXControl.send_command('?ZEA')
                     self._VSXControl.send_command('?HZV')
-            elif '/pioneervsxcontrol/main/tuner' in query.path:  #input next/prev main zone
-                if query.path.split('/')[-1] == 'next':
+            elif '/pioneervsxcontrol/main/tuner' in path:  #input next/prev main zone
+                if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
                     self._VSXControl.send_command('TPI')
-                if query.path.split('/')[-1] == 'previous':
+                if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
                     self._VSXControl.send_command('TPD')
             else:
@@ -558,3 +597,4 @@ if __name__=="__main__":
         server.shutdown(socket.SHUT_RDWR)
         server.close()
         sys.exit()
+
