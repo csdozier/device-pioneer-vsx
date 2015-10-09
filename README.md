@@ -20,16 +20,16 @@ This allows you to connect up a VSX-1130 or VSX-1124 (likely others) receiver to
 ##API
 The proxy accepts the following REST requests to control the receiver.
 
-*/pioneervsxcontrol/main/power/[on|off]
-*/pioneervsxcontrol/hdz/power/[on|off]
-*/pioneervsxcontrol/main/volumeset/[0-100]
-*/pioneervsxcontrol/hdz/volumeset/[0-100]
-*/pioneervsxcontrol/main/mute/[on|off]
-*/pioneervsxcontrol/hdz/mute/[on|off]
-*/pioneervsxcontrol/main/input/set/[code]
-*/pioneervsxcontrol/hdz/input/set/[code]
-*/pioneervsxcontrol/main/input/[next|previous]
-*/pioneervsxcontrol/hdz/input/[next|previous]
-*/pioneervsxcontrol/main/refresh
-*/pioneervsxcontrol/hdz/refresh
-*/pioneervsxcontrol/main/tuner/[next|previous]
+* /pioneervsxcontrol/main/power/[on|off]
+* /pioneervsxcontrol/hdz/power/[on|off]
+* /pioneervsxcontrol/main/volumeset/[0-100]
+* /pioneervsxcontrol/hdz/volumeset/[0-100]
+* /pioneervsxcontrol/main/mute/[on|off]
+* /pioneervsxcontrol/hdz/mute/[on|off]
+* /pioneervsxcontrol/main/input/set/[code]
+* /pioneervsxcontrol/hdz/input/set/[code]
+* /pioneervsxcontrol/main/input/[next|previous]
+* /pioneervsxcontrol/hdz/input/[next|previous]
+* /pioneervsxcontrol/main/refresh
+* /pioneervsxcontrol/hdz/refresh
+* /pioneervsxcontrol/main/tuner/[next|previous]
