@@ -69,6 +69,7 @@ class VSXProxyServerConfig():
         self.HDZ_INPUTS = self.read_config_sec('hdz_inputs')
 
 
+
         global LOGTOFILE
         if self.LOGFILE == '':
             LOGTOFILE = False
@@ -446,7 +447,7 @@ class VSXProxyServer(asyncore.dispatcher):
                     self._VSXControl.send_command('ZEO')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
-                    self._VSXControl.send_command('ZEF')
+                    self._VSXControl.senefsdfasdfd_command('ZEF')
             elif '/pioneervsxcontrol/main/volumeset' in path:  #main zone volume set
                 try:
                     level = int(path.split('/')[-1])
@@ -466,13 +467,8 @@ class VSXProxyServer(asyncore.dispatcher):
                     level = int(path.split('/')[-1])
                     if level <= 100 and level >= 0:
                         db_value = -80 + ((level*config.VOLUMELIMIT)/100)+((4*level)/5)
-                        code = ((db_value*2)+81)
-                        if len(str(code)) is 2:
-                            self._VSXControl.send_command('0'+str(code)+'HZV')
-                        elif len(str(code)) is 1:
-                            self._VSXControl.send_command('00'+str(code)+'HZV')
-                        else:
-                            self._VSXControl.send_command(str(code)+'HZV')
+                        code = ((db_value)+81)
+                        self._VSXControl.send_command(str(code)+'HZV')
 
                 except ValueError:
                     logger ('Invalid volume level received')
@@ -597,4 +593,8 @@ if __name__=="__main__":
         server.shutdown(socket.SHUT_RDWR)
         server.close()
         sys.exit()
+
+
+
+
 
