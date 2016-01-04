@@ -171,6 +171,11 @@ class VSXControl(asynchat.async_chat):
     current_hdz_input = ''
     current_main_power = False
     current_hdz_power = False
+    current_main_level = '0'
+    current_hdz_level = '0'
+    current_main_mute = False
+    current_hdz_mute = False
+
     last_command = ''
     last_command_time = datetime.datetime.now()
 
@@ -264,102 +269,120 @@ class VSXControl(asynchat.async_chat):
             try:
                 if input.startswith("PWR"): #main power on/off
                     if input.endswith('0'):
-                        logger('TX > HTTP GET: '+main_zone_URL_prefix+'power/on'+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        if not self.current_main_power:
+                            logger('TX > HTTP GET: '+main_zone_URL_prefix+'power/on'+main_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_main_power = True
-                        my_requests_thread.run()
                     if input.endswith('1'):
-                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'power/off'+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_main_power:
+                            logger('TX > HTTP GET:'+main_zone_URL_prefix+'power/off'+main_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_main_power = False
                 elif input.startswith("ZEP"): #hdz power on/off
                     if input.endswith('0'):
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/on'+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        if not self.current_hdz_power:
+                            logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/on'+hdz_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_hdz_power = True
-                        my_requests_thread.run()
                     if input.endswith('1'):
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/off'+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_hdz_power:
+                            logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/off'+hdz_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_hdz_power = False
                 elif input.startswith("VOL"): #main volume
                     code = input.split('VOL')[1]
                     vol_db = ((float(code) - 161) / 2)
                     scaledValue = int(0 + (vol_db - -80) * (100 - 0) / (int(config.VOLUMELIMIT) - -80))
-                    logger('TX > HTTP GET:'+main_zone_URL_prefix+'volumeset/'+str(scaledValue)+main_zone_URL_suffix)
-                    my_requests_thread = RequestsThread(main_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                    my_requests_thread.run()
+                    if self.current_main_level != str(scaledValue):
+                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'volumeset/'+str(scaledValue)+main_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.start()
+                    self.current_main_level = str(scaledValue)
                 elif input.startswith("XV"): #hdz volume
                     code = input.split('XV')[1]
                     vol_db = ((float(code) - 81))
                     scaledValue = int(0 + (vol_db - -80) * (100 - 0) / (int(config.VOLUMELIMIT) - -80))
-                    logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'volumeset/'+str(scaledValue)+hdz_zone_URL_suffix)
-                    my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                    my_requests_thread.run()
+                    if self.current_hdz_level != str(scaledValue):
+                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'volumeset/'+str(scaledValue)+hdz_zone_URL_suffix)
+                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                        my_requests_thread.start()
+                    self.current_hdz_level = str(scaledValue)
                 elif input.startswith("MUT"): #main mute on/off
                     if input.endswith('0'):
-                        logger('TX > HTTP GET: '+main_zone_URL_prefix+'mute/on'+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if not self.current_main_mute:
+                            logger('TX > HTTP GET: '+main_zone_URL_prefix+'mute/on'+main_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
+                        self.current_main_mute = True
                     if input.endswith('1'):
-                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'mute/off'+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_main_mute:
+                            logger('TX > HTTP GET:'+main_zone_URL_prefix+'mute/off'+main_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
+                        self.current_main_mute = False
                 elif input.startswith("HZMUT"): #hdz mute on/off
                     if input.endswith('0'):
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/on'+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if not self.current_hdz_mute:
+                            logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/on'+hdz_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
+                        self.current_hdz_mute = True
                     if input.endswith('1'):
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/off'+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_hdz_mute:
+                            logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/off'+hdz_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
+                        self.current_hdz_mute = False
                 elif input.startswith("FN"): #main input
                     code = input.split('FN')[1]
                     if len(code) ==2:
-                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)])+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_main_input != str(self._config.MAIN_INPUTS[str(code)]):
+                            logger('TX > HTTP GET:'+main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)])+main_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_main_input = str(self._config.MAIN_INPUTS[str(code)])
                     if '02' in str(code):
                         self.send_command('?FR')
                 elif input.startswith("ZEA"): #hdz input
                     code = input.split('ZEA')[1]
                     if len(code) ==2:
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)])+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        if self.current_hdz_input != str(self._config.HDZ_INPUTS[str(code)]):
+                            logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)])+hdz_zone_URL_suffix)
+                            my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
+                            my_requests_thread.start()
                         self.current_hdz_input = str(self._config.HDZ_INPUTS[str(code)])
                 elif input.startswith("GEH01020"): #main track
                     track = input.split('GEH01020"')[1].split('"')[0]
                     if self.current_main_power:
                         logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
                         my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        my_requests_thread.start()
                     else:
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        my_requests_thread.start()
                     if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        my_requests_thread.start()
                 elif input.startswith("GCH03010100000000100"):
                     logger('TX > HTTP GET:'+main_zone_URL_prefix+'pause'+main_zone_URL_suffix)
                     my_requests_thread = RequestsThread(main_zone_URL_prefix+'pause'+main_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                    my_requests_thread.run()
+                    my_requests_thread.start()
                     if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.run()
+                        my_requests_thread.start()
                 elif input.startswith("FRF"): #fm station
                     freq_string = input.split('FRF')[1]
                     track = str(int(freq_string[0:3]))+'.'+freq_string[-2:]
                     logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
                     my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                    my_requests_thread.run()
+                    my_requests_thread.start()
                 elif input.startswith("PRA"): #tuner preset
                     self.send_command('?FR')
             except Exception as ex:
@@ -398,6 +421,10 @@ class VSXProxyServer(asyncore.dispatcher):
         self.bind(("", config.PORT))
         self.listen(5)
         logger('Listening for HTTP(S) connections on port: '+str(config.PORT))
+
+        #Start Status Poller
+        _vsxstatuspoller = VSXStatusPoller(self._VSXControl)
+        _vsxstatuspoller.start()
 
     def handle_accept(self):
         # Accept the connection
@@ -533,10 +560,12 @@ class VSXProxyServer(asyncore.dispatcher):
 
 class RequestsThread(Thread):
     def __init__(self,url,method='get',access_token=''):
+        super(RequestsThread, self).__init__()
         """Initialize"""
         self.url = url
         self.method = method
         self.access_token = access_token
+        self.daemon = True
     def run(self):
         headers = {'Authorization': 'Bearer {}'.format(self.access_token)}
         try:
@@ -545,6 +574,34 @@ class RequestsThread(Thread):
         except Exception as ex:
             tb = traceback.format_exc()
             logger('Exception! '+ str(ex.message)+str(tb)+'url:'+self.url)
+
+
+class VSXStatusPoller(Thread):
+
+    def __init__(self, vsxcontrol,poll_interval=2000):
+        super(VSXStatusPoller, self).__init__()
+        # Create VSX Receiver Control object
+        self._vsxcontrol = vsxcontrol
+        self.poll_interval = poll_interval
+        self.daemon = True
+
+    def run(self):
+        while 1:
+            try:
+                #poll receiver for current values
+                if self._vsxcontrol._loggedin:
+                    self._vsxcontrol.send_command('?P')
+                    self._vsxcontrol.send_command('?V')
+                    self._vsxcontrol.send_command('?F')
+                    self._vsxcontrol.send_command('?ZEP')
+                    self._vsxcontrol.send_command('?ZEA')
+                    self._vsxcontrol.send_command('?HZV')
+                #sleep
+                logger('Polling sleeping for '+str(self.poll_interval)+' seconds..')
+                time.sleep(self.poll_interval)
+            except Exception as ex:
+                tb = traceback.format_exc()
+                logger('Exception! '+ str(ex.message)+str(tb))
 
 
 
@@ -593,6 +650,8 @@ if __name__=="__main__":
         server.shutdown(socket.SHUT_RDWR)
         server.close()
         sys.exit()
+
+
 
 
 
