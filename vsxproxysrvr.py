@@ -21,9 +21,12 @@ from threading import Thread
 import traceback
 from threading import Thread
 import base64
+import logging
+import logging.handlers
 
 
-LOGTOFILE = True
+
+LOGTOFILE = False
 
 
 def dict_merge(a, b):
@@ -32,17 +35,34 @@ def dict_merge(a, b):
     return c
 
 
-def logger(message, type = 0, level = 0):
-    log_line_limit = 25000
-    if LOGTOFILE  and len(config.LOGFILE) >0:
-        if int(outfile.tell()) > log_line_limit:
-            outfile.seek(0,0)
-        outfile.write(str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+' '+message+'\n')
-        print (str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+' '+message)
-        outfile.flush()
-    else:
-        print (str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))+' '+message)
+log = logging.getLogger('root')
 
+def dict_merge(a, b):
+    c = a.copy()
+    c.update(b)
+    return c
+
+def start_logger(configfile):
+    FORMAT = "%(asctime)-15s [%(filename)s:%(funcName)1s()] - %(levelname)s - %(message)s"
+    logging.basicConfig(format=FORMAT)
+    log.setLevel(logging.DEBUG)
+    if LOGTOFILE:
+        handler = logging.handlers.RotatingFileHandler(config.LOGFILE,
+                                               maxBytes=2000000,
+                                               backupCount=2,
+                                               )
+        formatter = logging.Formatter(FORMAT)
+        handler.setFormatter(formatter)
+        log.addHandler(handler)
+    log.info('Logging started..')
+
+def logger(message, level = 'info',type = 0):
+    if 'info' in level or level == 0:
+        log.info(message)
+    elif 'error' in level:
+        log.error(message)
+    elif 'debug' in level:
+        log.debug(message)
 
 class VSXProxyServerConfig():
     def __init__(self, configfile):
@@ -628,9 +648,7 @@ if __name__=="__main__":
     main(sys.argv[1:])
     print('Using configuration file %s' % conffile)
     config = VSXProxyServerConfig(conffile)
-    if LOGTOFILE and len(config.LOGFILE) >0:
-        outfile=open(config.LOGFILE,'w')
-        print ('Writing logfile to %s' % config.LOGFILE)
+    start_logger(config.LOGFILE)
 
     logger('VSX Proxy Server Starting')
 
@@ -650,6 +668,7 @@ if __name__=="__main__":
         server.shutdown(socket.SHUT_RDWR)
         server.close()
         sys.exit()
+
 
 
 
