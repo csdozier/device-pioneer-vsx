@@ -494,7 +494,7 @@ class VSXProxyServer(asyncore.dispatcher):
                     self._VSXControl.send_command('ZEO')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
-                    self._VSXControl.senefsdfasdfd_command('ZEF')
+                    self._VSXControl.send_command('ZEF')
             elif '/pioneervsxcontrol/main/volumeset' in path:  #main zone volume set
                 try:
                     level = int(path.split('/')[-1])
