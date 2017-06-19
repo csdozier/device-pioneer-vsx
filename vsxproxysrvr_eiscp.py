@@ -23,14 +23,15 @@ from threading import Thread
 import base64
 import logging
 import logging.handlers
-import vsxproxysrvr_eiscp
+from struct import pack, unpack
 
 
 LOGTOFILE = False
 log = logging.getLogger('root')
 
 
-def start_logger(configfile):
+
+def start_logger(configfile,config):
     FORMAT = "%(asctime)-15s [%(filename)s:%(funcName)1s()] - %(levelname)s - %(message)s"
     logging.basicConfig(format=FORMAT)
     log.setLevel(logging.DEBUG)
@@ -65,7 +66,7 @@ class VSXProxyServerConfig():
         self.CERTFILE = self.read_config_var('main', 'certfile', 'server.crt', 'str')
         self.KEYFILE = self.read_config_var('main', 'keyfile', 'server.key', 'str')
         self.RECEIVERIP = self.read_config_var('receiver', 'host', '', 'str')
-        self.RECEIVERPORT = self.read_config_var('receiver', 'port', 8102, 'int')
+        self.RECEIVERPORT = self.read_config_var('receiver', 'eiscp_port', 60128, 'int')
         self.VOLUMELIMIT = self.read_config_var('receiver', 'volume_limit', 0, 'int')
         self.CALLBACKURL_BASE = self.read_config_var('main', 'callbackurl_base', '', 'str')
         self.CALLBACKURL_APP_ID = self.read_config_var('main', 'callbackurl_app_id', '', 'str')
@@ -73,10 +74,9 @@ class VSXProxyServerConfig():
         self.CALLBACKURL_MAIN_DEVICE_ID = self.read_config_var('main', 'callbackurl_main_zone_device_id', '', 'str')
         self.CALLBACKURL_HDZ_DEVICE_ID = self.read_config_var('main', 'callbackurl_hdz_zone_device_id', '', 'str')
         self.CALLBACKURL_HDZ_DEVICE_ID = self.read_config_var('main', 'callbackurl_hdz_zone_device_id', '', 'str')
-        self.MAIN_INPUTS = self.read_config_sec('main_inputs')
-        self.HDZ_INPUTS = self.read_config_sec('hdz_inputs')
+        self.MAIN_INPUTS = self.read_config_sec('main_inputs_eiscp')
+        self.HDZ_INPUTS = self.read_config_sec('hdz_inputs_eiscp')
         self.USEISCP = self.read_config_var('main', 'use_eiscp', False, 'bool')
-
 
 
         global LOGTOFILE
@@ -250,25 +250,39 @@ class VSXControl(asynchat.async_chat):
         self.do_connect(True)
 
     def send_command(self, command):
+        HEADER = 'ISCP'
+        HEADERSIZE = 16
+        VERSION = 1
+        UNITTYPE = 1 # Receiver
         logger('TX > '+command)
         self.last_command = command
-        self.push(command+'\r\n')
+        message = '!' + str(UNITTYPE) + command + '\x0d'
+        datasize = HEADERSIZE + len(message)
+
+        line = pack('!4sIIBxxx',
+                HEADER,
+                HEADERSIZE,
+                datasize,
+                VERSION,
+        ) + message
+
+        logger("TX >  {0}".format(line))
+
+        self.push(line)
         time.sleep(0.085) #sleep 85ms between commands
 
-    def handle_line(self, input):
-        if input != '':
-            #for client in CONNECTEDCLIENTS:
-            #    CONNECTEDCLIENTS[client].send_command(input, False)
-
-            #code=int(input[:3])
-            #parameters=input[3:][:-2]
-            #event = getMessageType(int(code))
-            #message = self.format_event(event, parameters)
+    def handle_line(self, line):
+        HEADERSIZE = 16
+        if line != '':
+            logger('RX < Received: {0}'.format(line))
+            header, headersize, datasize, version = unpack('!4sIIBxxx', input[0:HEADERSIZE])
+            message = line[headersize:headersize+datasize].rstrip('\x1a\r\n')
+            input = message[2:].strip()
+            logger('RX < Received cmd: {0}'.format(input))
             main_zone_URL_prefix = self._config.CALLBACKURL_BASE + "/" + self._config.CALLBACKURL_APP_ID + "/vsxreceiver/" + str(self._config.CALLBACKURL_MAIN_DEVICE_ID) + "/"
             main_zone_URL_suffix = "?access_token=" + self._config.CALLBACKURL_ACCESS_TOKEN
             hdz_zone_URL_prefix = self._config.CALLBACKURL_BASE + "/" + self._config.CALLBACKURL_APP_ID + "/vsxreceiver/" + str(self._config.CALLBACKURL_HDZ_DEVICE_ID) + "/"
             hdz_zone_URL_suffix = "?access_token=" + self._config.CALLBACKURL_ACCESS_TOKEN
-            logger('RX < ' +str(input))
             input = str(input)
             #/vsxreceiver/:id/:command/:state
             #/vsxreceiver/:id/power/<on|off>
@@ -289,7 +303,7 @@ class VSXControl(asynchat.async_chat):
                             my_requests_thread = RequestsThread(main_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_main_power = False
-                elif input.startswith("ZEP"): #hdz power on/off
+                elif input.startswith("ZPW"): #hdz power on/off
                     if input.endswith('0'):
                         if not self.current_hdz_power:
                             logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'power/on'+hdz_zone_URL_suffix)
@@ -302,98 +316,70 @@ class VSXControl(asynchat.async_chat):
                             my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'power/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_hdz_power = False
-                elif input.startswith("VOL"): #main volume
-                    code = input.split('VOL')[1]
-                    vol_db = ((float(code) - 161) / 2)
-                    scaledValue = int(0 + (vol_db - -80) * (100 - 0) / (int(config.VOLUMELIMIT) - -80))
+                elif input.startswith("MVL"): #main volume
+                    code = input.split('MVL')[1]
+                    scaledValue = int(code,16)/2
                     if self.current_main_level != str(scaledValue):
                         logger('TX > HTTP GET:'+main_zone_URL_prefix+'volumeset/'+str(scaledValue)+main_zone_URL_suffix)
                         my_requests_thread = RequestsThread(main_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                         my_requests_thread.start()
                     self.current_main_level = str(scaledValue)
-                elif input.startswith("XV"): #hdz volume
-                    code = input.split('XV')[1]
-                    vol_db = ((float(code) - 81))
-                    scaledValue = int(0 + (vol_db - -80) * (100 - 0) / (int(config.VOLUMELIMIT) - -80))
+                elif input.startswith("ZVL"): #hdz volume
+                    code = input.split('ZVL')[1]
+                    scaledValue = int(code,16)/2
                     if self.current_hdz_level != str(scaledValue):
                         logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'volumeset/'+str(scaledValue)+hdz_zone_URL_suffix)
                         my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'volumeset/'+str(scaledValue),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                         my_requests_thread.start()
                     self.current_hdz_level = str(scaledValue)
-                elif input.startswith("MUT"): #main mute on/off
-                    if input.endswith('0'):
+                elif input.startswith("CMT"): #main mute on/off
+                    if '00' in input:
                         if not self.current_main_mute:
                             logger('TX > HTTP GET: '+main_zone_URL_prefix+'mute/on'+main_zone_URL_suffix)
                             my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_main_mute = True
-                    if input.endswith('1'):
+                    if '01' in input:
                         if self.current_main_mute:
                             logger('TX > HTTP GET:'+main_zone_URL_prefix+'mute/off'+main_zone_URL_suffix)
                             my_requests_thread = RequestsThread(main_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_main_mute = False
-                elif input.startswith("HZMUT"): #hdz mute on/off
-                    if input.endswith('0'):
+                elif input.startswith("ZMT"): #hdz mute on/off
+                    if '00' in input:
                         if not self.current_hdz_mute:
                             logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/on'+hdz_zone_URL_suffix)
                             my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/on',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_hdz_mute = True
-                    if input.endswith('1'):
+                    if '01' in input:
                         if self.current_hdz_mute:
                             logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'mute/off'+hdz_zone_URL_suffix)
                             my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'mute/off',access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_hdz_mute = False
-                elif input.startswith("FN"): #main input
-                    code = input.split('FN')[1]
+                elif input.startswith("SLI"): #main input
+                    code = input.split('SLI')[1]
                     if len(code) ==2:
                         if self.current_main_input != str(self._config.MAIN_INPUTS[str(code)]):
                             logger('TX > HTTP GET:'+main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)])+main_zone_URL_suffix)
                             my_requests_thread = RequestsThread(main_zone_URL_prefix+'input/'+str(self._config.MAIN_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_main_input = str(self._config.MAIN_INPUTS[str(code)])
-                    if '02' in str(code):
-                        self.send_command('?FR')
-                elif input.startswith("ZEA"): #hdz input
-                    code = input.split('ZEA')[1]
+                elif input.startswith("SLZ"): #hdz input
+                    code = input.split('SLZ')[1]
                     if len(code) ==2:
                         if self.current_hdz_input != str(self._config.HDZ_INPUTS[str(code)]):
                             logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)])+hdz_zone_URL_suffix)
                             my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'input/'+str(self._config.HDZ_INPUTS[str(code)]),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                             my_requests_thread.start()
                         self.current_hdz_input = str(self._config.HDZ_INPUTS[str(code)])
-                elif input.startswith("GEH01020"): #main track
-                    track = input.split('GEH01020"')[1].split('"')[0]
-                    if self.current_main_power:
-                        logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.start()
-                    else:
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.start()
-                    if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track)+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'track/'+str(self.current_hdz_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.start()
-                elif input.startswith("GCH03010100000000100"):
-                    logger('TX > HTTP GET:'+main_zone_URL_prefix+'pause'+main_zone_URL_suffix)
-                    my_requests_thread = RequestsThread(main_zone_URL_prefix+'pause'+main_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                    my_requests_thread.start()
-                    if self.current_hdz_input == self.current_main_input and self.current_hdz_power:
-                        logger('TX > HTTP GET:'+hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix)
-                        my_requests_thread = RequestsThread(hdz_zone_URL_prefix+'pause'+hdz_zone_URL_suffix,access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
-                        my_requests_thread.start()
-                elif input.startswith("FRF"): #fm station
-                    freq_string = input.split('FRF')[1]
+                elif input.startswith("TUN"): #fm station
+                    freq_string = input.split('TUN')[1]
                     track = str(int(freq_string[0:3]))+'.'+freq_string[-2:]
                     logger('TX > HTTP GET:'+main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track)+main_zone_URL_suffix)
                     my_requests_thread = RequestsThread(main_zone_URL_prefix+'track/'+str(self.current_main_input+': '+track),access_token=self._config.CALLBACKURL_ACCESS_TOKEN)
                     my_requests_thread.start()
-                elif input.startswith("PRA"): #tuner preset
-                    self.send_command('?FR')
             except Exception as ex:
                 tb = traceback.format_exc()
                 logger('Exception! '+ str(ex.message)+str(tb))
@@ -473,92 +459,85 @@ class VSXProxyServer(asyncore.dispatcher):
             elif '/pioneervsxcontrol/main/power' in path:  #power on/off main zone
                 if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Powering on receiver'}))
-                    self._VSXControl.send_command('PO')
+                    self._VSXControl.send_command('PWR01')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
-                    self._VSXControl.send_command('PF')
+                    self._VSXControl.send_command('PWR00')
             elif '/pioneervsxcontrol/hdz/power' in path:  #power on/off hd zone
                 if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Powering on receiver'}))
-                    self._VSXControl.send_command('ZEO')
+                    self._VSXControl.send_command('ZPW00')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Powering off receiver'}))
-                    self._VSXControl.send_command('ZEF')
+                    self._VSXControl.send_command('ZPW01')
             elif '/pioneervsxcontrol/main/volumeset' in path:  #main zone volume set
                 try:
                     level = int(path.split('/')[-1])
                     if level <= 100 and level >= 0:
-                        db_value = -80 + ((level*config.VOLUMELIMIT)/100)+((4*level)/5)
-                        code = ((db_value*2)+161)
-                        if len(str(code)) is 2:
-                            self._VSXControl.send_command('0'+str(code)+'VL')
-                        elif len(str(code)) is 1:
-                            self._VSXControl.send_command('00'+str(code)+'VL')
-                        else:
-                            self._VSXControl.send_command(str(code)+'VL')
+                        code = hex(level*2)[2:]
+                        self._VSXControl.send_command('MVL'+str(code))
                 except ValueError:
                     logger ('Invalid volume level received')
             elif '/pioneervsxcontrol/hdz/volumeset' in path:  #hdz zone volume set
                 try:
                     level = int(path.split('/')[-1])
                     if level <= 100 and level >= 0:
-                        db_value = -80 + ((level*config.VOLUMELIMIT)/100)+((4*level)/5)
-                        code = ((db_value)+81)
-                        self._VSXControl.send_command(str(code)+'HZV')
+                        code = hex(level*2)[2:]
+                        self._VSXControl.send_command('ZVL'+str(code))
 
                 except ValueError:
                     logger ('Invalid volume level received')
             elif '/pioneervsxcontrol/main/mute' in path:  #power on/off main zone
                 if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Mute on'}))
-                    self._VSXControl.send_command('MO')
+                    self._VSXControl.send_command('CMT01')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Mute off'}))
-                    self._VSXControl.send_command('MF')
+                    self._VSXControl.send_command('MT00')
             elif '/pioneervsxcontrol/hdz/mute' in path:  #hdz on/off main zone
                 if path.split('/')[-1] == 'on':
                     channel.pushok(json.dumps({'response' : 'Mute on'}))
-                    self._VSXControl.send_command('HZMO')
+                    self._VSXControl.send_command('ZMT01')
                 if path.split('/')[-1] == 'off':
                     channel.pushok(json.dumps({'response' : 'Mute off'}))
-                    self._VSXControl.send_command('HZMF')
+                    self._VSXControl.send_command('ZMT00')
             elif '/pioneervsxcontrol/main/input/set' in path:  #set input main zone
                 code = path.split('/')[-1]
                 channel.pushok(json.dumps({'response' : 'Setting input:'+str(code)}))
-                self._VSXControl.send_command(str(code)+'FN')
+                self._VSXControl.send_command('SLI'+str(code))
             elif '/pioneervsxcontrol/hdz/input/set' in path:  #set input hdz zone
                 code = path.split('/')[-1]
                 channel.pushok(json.dumps({'response' : 'Setting input:'+str(code)}))
-                self._VSXControl.send_command(str(code)+'ZEA')
+                self._VSXControl.send_command('SLZ'+str(code))
             elif '/pioneervsxcontrol/main/input' in path:  #input next/prev main zone
                 if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
-                    self._VSXControl.send_command('FU')
+                    self._VSXControl.send_command('SLIUP')
                 if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
-                    self._VSXControl.send_command('FD')
+                    self._VSXControl.send_command('SLIDOWN')
             elif '/pioneervsxcontrol/hdz/input' in path:  #input next/prev hdz zone
                 if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
-                    self._VSXControl.send_command('ZEC')
+                    self._VSXControl.send_command('SLZUP')
                 if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
-                    self._VSXControl.send_command('ZEB')
+                    self._VSXControl.send_command('SLZDOWN')
             elif '/pioneervsxcontrol/main/refresh' in path:  #refresh main zone
-                    self._VSXControl.send_command('?P')
-                    self._VSXControl.send_command('?V')
-                    self._VSXControl.send_command('?F')
+                    self._VSXControl.send_command('PWRQSTN')
+                    self._VSXControl.send_command('MVLQSTN')
+                    self._VSXControl.send_command('SLIQSTN')
             elif '/pioneervsxcontrol/hdz/refresh' in path:  #refresh hdz zone
-                    self._VSXControl.send_command('?ZEP')
-                    self._VSXControl.send_command('?ZEA')
-                    self._VSXControl.send_command('?HZV')
+                    self._VSXControl.send_command('ZPWQSTN')
+                    self._VSXControl.send_command('SLZQSTN')
+                    self._VSXControl.send_command('ZVLQSTN')
             elif '/pioneervsxcontrol/main/tuner' in path:  #input next/prev main zone
                 if path.split('/')[-1] == 'next':
                     channel.pushok(json.dumps({'response' : 'Next Input'}))
-                    self._VSXControl.send_command('TPI')
+                    self._VSXControl.send_command('TUNUP')
                 if path.split('/')[-1] == 'previous':
                     channel.pushok(json.dumps({'response' : 'Previous Input'}))
-                    self._VSXControl.send_command('TPD')
+                    self._VSXControl.send_command('TUNDOWN')
             else:
                 channel.pushstatus(404, "Not found")
                 channel.push("Content-type: text/html\r\n")
@@ -600,12 +579,12 @@ class VSXStatusPoller(Thread):
                 #poll receiver for current values
                 if not self._vsxcontrol._loggedin:
                     time.sleep(5)
-                self._vsxcontrol.send_command('?P')
-                self._vsxcontrol.send_command('?V')
-                self._vsxcontrol.send_command('?F')
-                self._vsxcontrol.send_command('?ZEP')
-                self._vsxcontrol.send_command('?ZEA')
-                self._vsxcontrol.send_command('?HZV')
+                self._vsxcontrol.send_command('PWRQSTN')
+                self._vsxcontrol.send_command('MVLQSTN')
+                self._vsxcontrol.send_command('SLIQSTN')
+                self._vsxcontrol.send_command('ZPWQSTN')
+                self._vsxcontrol.send_command('SLZQSTN')
+                self._vsxcontrol.send_command('ZVLQSTN')
                 #sleep
                 logger('Polling sleeping for '+str(self.poll_interval)+' seconds..')
                 time.sleep(self.poll_interval)
@@ -633,18 +612,13 @@ def main(argv):
             conffile = arg
 
 
-if __name__=="__main__":
+def start():
     conffile='vsxproxysrvr.cfg'
-    main(sys.argv[1:])
-    print('Using configuration file %s' % conffile)
+    global config
     config = VSXProxyServerConfig(conffile)
-    if config.USEISCP:
-        vsxproxysrvr_eiscp.start()
-    else:
-        start_logger(config.LOGFILE)
-        logger('VSX Proxy Server Starting')
-        server = VSXProxyServer(config)
-
+    start_logger(config.LOGFILE,config)
+    logger('VSX Proxy Server Starting')
+    server = VSXProxyServer(config)
     try:
         while True:
             asyncore.loop(timeout=2, count=1)
@@ -653,10 +627,15 @@ if __name__=="__main__":
         print "Crtl+C pressed. Shutting down."
         logger('Shutting down from Ctrl+C')
 
-
         server.shutdown(socket.SHUT_RDWR)
         server.close()
         sys.exit()
+
+if __name__=="__main__":
+    conffile='vsxproxysrvr.cfg'
+    main(sys.argv[1:])
+    print('Using configuration file %s' % conffile)
+    start()
 
 
 
