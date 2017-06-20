@@ -10,7 +10,7 @@
  
 
 metadata {
-	definition (name: "Pioneer VSX-1130 Network Receiver", namespace: "scdozier", 
+	definition (name: "Pioneer VSX Network Receiver", namespace: "scdozier", 
     	author: "Scott Dozier") {
         capability "Actuator"
 		capability "Switch" 
