@@ -4,10 +4,10 @@
  *  Author: Scott Dozier 2015
  */
 definition(
-    name: "Pioneer VSX-1130 Integration",
+    name: "Pioneer VSX Integration",
     namespace: "scdozier",
     author: "Scott Dozier",
-    description: "Pioneer VSX-1130 Integration",
+    description: "Pioneer VSX Integration",
     category: "My Apps",
     iconUrl: "http://i.imgur.com/xUCNTXB.jpg?1",
     iconX2Url: "http://i.imgur.com/NI16VUZ.jpg?1",
