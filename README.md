@@ -5,12 +5,12 @@ Smartthings Device Type for Pioneer VSX Receivers
 This allows you to connect up a VSX-1130/VSX-1124/etc receiver to smartthings.  The device utilizes a proxy which connects to the receiver via a socket connection.  
 
 
-##Prerequisites
+#Prerequisites
 
  - Python 2.7
  - requests (pip install requests)
 
-##Installation
+#Installation
 
  1. Download all files from this repository
  2. Login to https://graph.api.smartthings.com/
@@ -57,7 +57,7 @@ This allows you to connect up a VSX-1130/VSX-1124/etc receiver to smartthings.  
  27.  Start the program using **python vsxproxysrvr.py**
 
 
-##API
+#API
 The proxy accepts the following REST requests to control the receiver.
 
 * /pioneervsxcontrol/main/power/[on|off]
